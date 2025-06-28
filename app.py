@@ -4,7 +4,7 @@ import json
 
 app = Flask(__name__)
 
-# Initialize database
+# Initialize database on startup
 def init_db():
     conn = sqlite3.connect('sales.db')
     c = conn.cursor()
@@ -13,7 +13,8 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             cart_json TEXT,
             total REAL,
-            discount REAL
+            discount REAL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     conn.commit()
@@ -21,25 +22,35 @@ def init_db():
 
 init_db()
 
+@app.route('/', methods=['GET'])
+def home():
+    return '<h2>Clinic POS backend is running!</h2><p>Endpoints:<ul><li>/checkout (POST)</li><li>/sales (GET)</li></ul></p>'
+
 @app.route('/checkout', methods=['POST'])
 def checkout():
-    data = request.get_json()
-    cart = data.get('cart')
-    total = data.get('total')
-    discount = data.get('discount')
-    conn = sqlite3.connect('sales.db')
-    c = conn.cursor()
-    c.execute('INSERT INTO sales (cart_json, total, discount) VALUES (?, ?, ?)',
-              (json.dumps(cart), total, discount))
-    conn.commit()
-    conn.close()
-    return jsonify({'status': 'success'})
+    try:
+        data = request.get_json(force=True)
+        cart = data.get('cart')
+        total = data.get('total')
+        discount = data.get('discount')
+        if cart is None or total is None or discount is None:
+            return jsonify({'status': 'error', 'message': 'Missing fields'}), 400
+
+        conn = sqlite3.connect('sales.db')
+        c = conn.cursor()
+        c.execute('INSERT INTO sales (cart_json, total, discount) VALUES (?, ?, ?)',
+                  (json.dumps(cart), total, discount))
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/sales', methods=['GET'])
 def sales():
     conn = sqlite3.connect('sales.db')
     c = conn.cursor()
-    c.execute('SELECT id, cart_json, total, discount FROM sales ORDER BY id DESC')
+    c.execute('SELECT id, cart_json, total, discount, timestamp FROM sales ORDER BY id DESC')
     rows = c.fetchall()
     conn.close()
     sales_list = []
@@ -48,7 +59,8 @@ def sales():
             "id": row[0],
             "cart": json.loads(row[1]),
             "total": row[2],
-            "discount": row[3]
+            "discount": row[3],
+            "timestamp": row[4]
         })
     return jsonify(sales_list)
 
