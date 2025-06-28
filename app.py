@@ -4,7 +4,7 @@ import json
 
 app = Flask(__name__)
 
-# Initialize database on startup
+# Initialize SQLite database (creates sales.db if not present)
 def init_db():
     conn = sqlite3.connect('sales.db')
     c = conn.cursor()
@@ -24,7 +24,15 @@ init_db()
 
 @app.route('/', methods=['GET'])
 def home():
-    return '<h2>Clinic POS backend is running!</h2><p>Endpoints:<ul><li>/checkout (POST)</li><li>/sales (GET)</li></ul></p>'
+    return '''
+        <h2>Clinic POS backend is running!</h2>
+        <p>Endpoints:
+            <ul>
+                <li>/checkout (POST)</li>
+                <li>/sales (GET)</li>
+            </ul>
+        </p>
+    '''
 
 @app.route('/checkout', methods=['POST'])
 def checkout():
@@ -34,12 +42,14 @@ def checkout():
         total = data.get('total')
         discount = data.get('discount')
         if cart is None or total is None or discount is None:
-            return jsonify({'status': 'error', 'message': 'Missing fields'}), 400
+            return jsonify({'status': 'error', 'message': 'Missing cart, total, or discount'}), 400
 
         conn = sqlite3.connect('sales.db')
         c = conn.cursor()
-        c.execute('INSERT INTO sales (cart_json, total, discount) VALUES (?, ?, ?)',
-                  (json.dumps(cart), total, discount))
+        c.execute(
+            'INSERT INTO sales (cart_json, total, discount) VALUES (?, ?, ?)',
+            (json.dumps(cart), total, discount)
+        )
         conn.commit()
         conn.close()
         return jsonify({'status': 'success'})
@@ -48,21 +58,29 @@ def checkout():
 
 @app.route('/sales', methods=['GET'])
 def sales():
-    conn = sqlite3.connect('sales.db')
-    c = conn.cursor()
-    c.execute('SELECT id, cart_json, total, discount, timestamp FROM sales ORDER BY id DESC')
-    rows = c.fetchall()
-    conn.close()
-    sales_list = []
-    for row in rows:
-        sales_list.append({
-            "id": row[0],
-            "cart": json.loads(row[1]),
-            "total": row[2],
-            "discount": row[3],
-            "timestamp": row[4]
-        })
-    return jsonify(sales_list)
+    try:
+        conn = sqlite3.connect('sales.db')
+        c = conn.cursor()
+        c.execute('SELECT id, cart_json, total, discount, timestamp FROM sales ORDER BY id DESC')
+        rows = c.fetchall()
+        conn.close()
+        sales_list = []
+        for row in rows:
+            sales_list.append({
+                "id": row[0],
+                "cart": json.loads(row[1]),
+                "total": row[2],
+                "discount": row[3],
+                "timestamp": row[4]
+            })
+        return jsonify(sales_list)
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# Optional: Helpful info if someone tries GET on /checkout
+@app.route('/checkout', methods=['GET'])
+def checkout_get_info():
+    return "<h3>POST sales data to this endpoint to record a sale.</h3>"
 
 if __name__ == "__main__":
     app.run(debug=True)
